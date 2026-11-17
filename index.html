@@ -62,7 +62,7 @@
 
       <section class="page" id="page-stock">
         <div class="section-intro"><div><h2>Stock Onhand</h2><p>Posisi Akhir, Onhand, dan Selisih terkini dari sheet STOCK ONHAND.</p></div></div>
-        <div class="toolbar"><input id="stockSearch" class="search" placeholder="Cari kode atau nama barang..."><span class="result-count" id="stockCount"></span></div>
+        <div class="toolbar"><input id="stockSearch" class="search" placeholder="Cari kode atau nama barang..."><span class="result-count" id="stockCount"></span><div class="export-actions"><button class="btn btn-light" id="stockCsvBtn">↓ Export Excel / CSV</button><button class="btn btn-light" id="stockPdfBtn">▤ Export PDF</button></div></div>
         <div class="panel"><div class="table-wrap"><table><thead><tr><th>Kode Barang</th><th>Nama Barang</th><th>Satuan</th><th class="num">Akhir</th><th class="num">Onhand</th><th class="num">Selisih</th><th>Aksi</th></tr></thead><tbody id="stockRows"><tr><td colspan="7" class="empty">Memuat data...</td></tr></tbody></table></div></div>
       </section>
 
@@ -201,6 +201,31 @@ async function loadAll(){
   }catch(e){setConnection(false,"Tidak terhubung");toast(e.message);console.error(e)}
   finally{$("refreshBtn").disabled=false;$("refreshBtn").innerHTML="↻ <span>Refresh</span>"}
 }
+function getVisibleStockRows(){
+  const q=$("stockSearch").value.toLowerCase().trim();
+  return stockData.filter(x=>[x.kode,x.nama,x.satuan].join(" ").toLowerCase().includes(q));
+}
+function exportStockCSV(){
+  const rows=getVisibleStockRows();
+  if(!rows.length){toast("Tidak ada data Stock Onhand untuk diekspor.");return;}
+  const data=[["Kode Barang","Nama Barang","Satuan","Akhir","OH","Selisih"],
+    ...rows.map(x=>[x.kode,x.nama,x.satuan,x.akhir??x.saldo??"",x.onhand??x.oh??"",x.selisih??""])];
+  const csv="\uFEFF"+data.map(r=>r.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(";")).join("\r\n");
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);const a=document.createElement("a");
+  a.href=url;a.download="stock-onhand-akhir-oh-selisih.csv";a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast("Export Stock Onhand berhasil dibuat.");
+}
+function exportStockPDF(){
+  const rows=getVisibleStockRows();
+  if(!rows.length){toast("Tidak ada data Stock Onhand untuk diekspor.");return;}
+  const w=window.open("","_blank");
+  if(!w){toast("Popup diblokir browser. Izinkan popup untuk export PDF.");return;}
+  const body=rows.map(x=>`<tr><td>${esc(x.kode)}</td><td>${esc(x.nama)}</td><td>${esc(x.satuan)}</td><td class="num">${fmt(x.akhir??x.saldo)}</td><td class="num">${fmt(x.onhand??x.oh)}</td><td class="num">${fmt(x.selisih)}</td></tr>`).join("");
+  w.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Stock Onhand</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#222}h2{margin:0 0 6px}p{font-size:12px;color:#555;margin:0 0 18px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #bbb;padding:7px;text-align:left}th{background:#eaf0f6}.num{text-align:right}@media print{button{display:none}}</style></head><body><h2>STOCK ONHAND</h2><p>Export posisi stok • ${new Date().toLocaleString("id-ID")} • ${rows.length} item</p><table><thead><tr><th>Kode Barang</th><th>Nama Barang</th><th>Satuan</th><th>Akhir</th><th>OH</th><th>Selisih</th></tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print();<\/script></body></html>`);
+  w.document.close();
+}
 function exportCSV(){
   const rows=filteredHistory;const data=[["Tanggal","Kode Barang","Nama Barang","Satuan","Selisih","Status"],...rows.map(x=>[dateFmt(x.tanggal||x.date),x.kode,x.nama,x.satuan,x.selisih,x.type])];
   const csv="\uFEFF"+data.map(r=>r.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(";")).join("\r\n");
@@ -218,6 +243,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("clearFilter").addEventListener("click",async()=>{$("fromDate").value="";$("toDate").value="";$("historySearch").value="";activeType="ALL";document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.type==="ALL"));await loadAll()});
   document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{activeType=b.dataset.type;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));renderHistory()}));
   $("csvBtn").addEventListener("click",exportCSV);$("pdfBtn").addEventListener("click",()=>window.print());
+  $("stockCsvBtn").addEventListener("click",exportStockCSV);$("stockPdfBtn").addEventListener("click",exportStockPDF);
   $("reportApply").addEventListener("click",renderReport);
   loadAll();
 });
