@@ -62,7 +62,7 @@
 
       <section class="page" id="page-stock">
         <div class="section-intro"><div><h2>Stock Onhand</h2><p>Posisi Akhir, Onhand, dan Selisih terkini dari sheet STOCK ONHAND.</p></div></div>
-        <div class="toolbar"><input id="stockSearch" class="search" placeholder="Cari kode atau nama barang..."><span class="result-count" id="stockCount"></span><div class="export-actions"><button class="btn btn-light" id="stockCsvBtn">↓ Export Excel / CSV</button><button class="btn btn-light" id="stockPdfBtn">▤ Export PDF</button></div></div>
+        <div class="toolbar"><input id="stockSearch" class="search" placeholder="Cari kode atau nama barang..."><div class="tabs" id="stockTypeTabs"><button class="tab active" data-stock-type="ALL">Semua</button><button class="tab" data-stock-type="PLUS">Plus</button><button class="tab" data-stock-type="MINUS">Minus</button></div><span class="result-count" id="stockCount"></span><div class="export-actions"><button class="btn btn-light" id="stockCsvBtn">↓ Export Excel / CSV</button><button class="btn btn-light" id="stockPdfBtn">▤ Export PDF</button></div></div>
         <div class="panel"><div class="table-wrap"><table><thead><tr><th>Kode Barang</th><th>Nama Barang</th><th>Satuan</th><th class="num">Akhir</th><th class="num">Onhand</th><th class="num">Selisih</th><th>Aksi</th></tr></thead><tbody id="stockRows"><tr><td colspan="7" class="empty">Memuat data...</td></tr></tbody></table></div></div>
       </section>
 
@@ -110,7 +110,7 @@ window.STOCK_CONFIG = {
   </script>
   <script>
 const $ = (id) => document.getElementById(id);
-let stockData = [], historyData = [], filteredHistory = [], activeType = "ALL";
+let stockData = [], historyData = [], filteredHistory = [], activeType = "ALL", activeStockType = "ALL";
 
 function api(action, args = {}, extra = {}) {
   return new Promise((resolve, reject) => {
@@ -142,7 +142,11 @@ function showPage(name){document.querySelectorAll(".page").forEach(p=>p.classLis
 function normalizeHistory(rows){return (rows||[]).map(x=>({...x,selisih:num(x.selisih)})).filter(x=>x.selisih!==null)}
 function renderStock(){
   const q=$("stockSearch").value.toLowerCase().trim();
-  const rows=stockData.filter(x=>[x.kode,x.nama,x.satuan].join(" ").toLowerCase().includes(q));
+  const rows=stockData.filter(x=>{
+    const n=Number(x.selisih)||0;
+    const typeMatch=activeStockType==="ALL"||(activeStockType==="PLUS"&&n>0)||(activeStockType==="MINUS"&&n<0);
+    return typeMatch&&[x.kode,x.nama,x.satuan].join(" ").toLowerCase().includes(q);
+  });
   $("stockCount").textContent=rows.length+" item";
   $("stockRows").innerHTML=rows.length?rows.map(x=>`<tr><td><strong>${esc(x.kode)}</strong></td><td>${esc(x.nama)}</td><td>${esc(x.satuan)}</td><td class="num">${fmt(x.akhir??x.saldo)}</td><td class="num">${fmt(x.onhand??x.oh)}</td><td class="num">${fmt(x.selisih)} ${x.selisih<0?'<span class="badge minus">MINUS</span>':x.selisih>0?'<span class="badge plus">PLUS</span>':''}</td><td><button class="btn-edit" data-edit-code="${esc(x.kode)}" data-edit-name="${esc(x.nama)}" data-edit-value="${esc(x.onhand??x.oh??'')}">Edit Onhand</button></td></tr>`).join(""):'<tr><td colspan="7" class="empty">Tidak ada item ditemukan.</td></tr>';
 }
@@ -203,7 +207,7 @@ async function loadAll(){
 }
 function getVisibleStockRows(){
   const q=$("stockSearch").value.toLowerCase().trim();
-  return stockData.filter(x=>[x.kode,x.nama,x.satuan].join(" ").toLowerCase().includes(q));
+  return stockData.filter(x=>{const n=Number(x.selisih)||0;const typeMatch=activeStockType==="ALL"||(activeStockType==="PLUS"&&n>0)||(activeStockType==="MINUS"&&n<0);return typeMatch&&[x.kode,x.nama,x.satuan].join(" ").toLowerCase().includes(q);});
 }
 function exportStockCSV(){
   const rows=getVisibleStockRows();
@@ -237,9 +241,10 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("menuToggle").addEventListener("click",()=>$("sidebar").classList.toggle("open"));
   $("refreshBtn").addEventListener("click",loadAll);
   $("stockSearch").addEventListener("input",renderStock);
+  document.querySelectorAll("[data-stock-type]").forEach(b=>b.addEventListener("click",()=>{activeStockType=b.dataset.stockType;document.querySelectorAll("[data-stock-type]").forEach(x=>x.classList.toggle("active",x===b));renderStock();}));
   $("stockRows").addEventListener("click",(event)=>{const button=event.target.closest("[data-edit-code]");if(button)handleEditOnhand(button);});
   $("historySearch").addEventListener("input",renderHistory);
-  $("applyFilter").addEventListener("click",async()=>{try{historyData=normalizeHistory(await api("getHistory",{from:$("fromDate").value,to:$("toDate").value}));renderHistory();renderDashboard();toast("Filter tanggal diterapkan.")}catch(e){toast(e.message)}});
+  $("applyFilter").addEventListener("click",async()=>{const from=$("fromDate").value,to=$("toDate").value;if(from&&to&&from>to){toast("Tanggal awal tidak boleh melebihi tanggal akhir.");return;}try{const rows=await api("getHistory",{from,to});historyData=normalizeHistory(rows).filter(x=>{const d=String(x.tanggal||x.date||"").slice(0,10);return(!from||d>=from)&&(!to||d<=to);});renderHistory();renderDashboard();toast(from&&to&&from===to?"Menampilkan histori tanggal "+dateFmt(from):"Filter tanggal diterapkan.")}catch(e){toast(e.message)}});
   $("clearFilter").addEventListener("click",async()=>{$("fromDate").value="";$("toDate").value="";$("historySearch").value="";activeType="ALL";document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.type==="ALL"));await loadAll()});
   document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{activeType=b.dataset.type;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));renderHistory()}));
   $("csvBtn").addEventListener("click",exportCSV);$("pdfBtn").addEventListener("click",()=>window.print());
