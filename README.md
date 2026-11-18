@@ -1,2 +1,2 @@
-# stock-control-dashboard
+# stock-RM/WIP
 Stock Control Dashboard - Inventory Monitoring System
